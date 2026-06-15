@@ -1,0 +1,129 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # the release job attaches assets
+
+env:
+  ZLIB_VERSION: "1.3.1"
+
+jobs:
+  # ── Linux: x86_64 (native), x86/i686 (multilib), ARM64 & ARM32 (cross) ──────
+  # zlib is built from source per target (static, PIC) so the artefacts are
+  # self-contained and we avoid the multiarch apt dance. SDR++ core symbols are
+  # resolved at load time (ELF --unresolved-symbols), so no SDR++ build is
+  # needed — only its headers (fetched by scripts/fetch-sdrpp.sh).
+  linux:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            apt: ""
+            toolchain: ""
+            cflags: ""
+          - target: linux-x86
+            apt: "gcc-multilib g++-multilib"
+            toolchain: ""
+            cflags: "-m32"
+          - target: linux-aarch64
+            apt: "gcc-aarch64-linux-gnu g++-aarch64-linux-gnu"
+            toolchain: "cmake/toolchains/linux-aarch64.cmake"
+            # SDR++ headers pull in <fftw3.h>/<volk/*.h>; these are header-only
+            # for us (never linked), so let the cross compiler find the amd64
+            # copies at lowest priority without touching its own libc headers.
+            cflags: "-idirafter /usr/include"
+          - target: linux-armhf
+            apt: "gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf"
+            toolchain: "cmake/toolchains/linux-armhf.cmake"
+            cflags: "-idirafter /usr/include"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          # libfftw3-dev / libvolk-dev / libglfw3-dev / libzstd-dev supply the
+          # (arch-independent) headers that SDR++ core headers include; we never
+          # link them — sdrpp_core resolves at load time.
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build git curl ca-certificates \
+            libfftw3-dev libvolk-dev libglfw3-dev libzstd-dev ${{ matrix.apt }}
+
+      - name: Fetch SDR++ source (headers only)
+        run: bash scripts/fetch-sdrpp.sh
+
+      - name: Build zlib (static, PIC) for the target
+        run: |
+          set -eux
+          curl -fsSL "https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zlib-${ZLIB_VERSION}.tar.gz" -o zlib.tar.gz
+          tar xf zlib.tar.gz
+          ZARGS=(-G Ninja -DCMAKE_BUILD_TYPE=Release
+                 -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+                 -DCMAKE_INSTALL_PREFIX="$PWD/zinstall")
+          if [ -n "${{ matrix.toolchain }}" ]; then
+            ZARGS+=(-DCMAKE_TOOLCHAIN_FILE="$PWD/${{ matrix.toolchain }}")
+          fi
+          if [ -n "${{ matrix.cflags }}" ]; then
+            ZARGS+=(-DCMAKE_C_FLAGS="${{ matrix.cflags }}")
+          fi
+          cmake -S "zlib-${ZLIB_VERSION}" -B zbuild "${ZARGS[@]}"
+          cmake --build zbuild --target install
+
+      - name: Configure
+        run: |
+          set -eux
+          ARGS=(-G Ninja -DCMAKE_BUILD_TYPE=Release
+                -DZLIB_LIBRARY="$PWD/zinstall/lib/libz.a"
+                -DZLIB_INCLUDE_DIR="$PWD/zinstall/include")
+          if [ -n "${{ matrix.toolchain }}" ]; then
+            ARGS+=(-DCMAKE_TOOLCHAIN_FILE="$PWD/${{ matrix.toolchain }}")
+          fi
+          if [ -n "${{ matrix.cflags }}" ]; then
+            ARGS+=(-DCMAKE_C_FLAGS="${{ matrix.cflags }}" -DCMAKE_CXX_FLAGS="${{ matrix.cflags }}")
+          fi
+          cmake -B build -S . "${ARGS[@]}"
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Collect artefact
+        run: |
+          set -eux
+          mkdir -p dist
+          cp build/j_alert_decoder.so "dist/j_alert_decoder-${{ matrix.target }}.so"
+          file "dist/j_alert_decoder-${{ matrix.target }}.so"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist/j_alert_decoder-${{ matrix.target }}.so
+          if-no-files-found: error
+
+  # ── Publish a GitHub Release with all binaries when a v* tag is pushed ──────
+  release:
+    needs: linux
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artefacts
+        run: find artifacts -type f -name '*.so' -print
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.so
+          generate_release_notes: true
+          fail_on_unmatched_files: true

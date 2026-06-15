@@ -1,0 +1,16 @@
+build/
+dist/
+external/
+# CI: per-target zlib built from source
+zlib-*/
+zbuild/
+zinstall/
+zlib.tar.gz
+.cache/
+compile_commands.json
+.vscode/
+.idea/
+*.o
+*.so
+*.dylib
+*.dll
