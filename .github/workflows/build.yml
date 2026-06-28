@@ -29,13 +29,21 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path libs | Out-Null
-          $url = 'https://airspy.com/downloads/sdrsharp-x86.zip'
+          # Official SDR# (SDRSharp) software package (Windows x86). This is a
+          # download-monitor link that redirects to the current sdrsharp-x86 zip.
+          $url = 'https://airspy.com/?ddownload=3130'
           Write-Host "Downloading $url"
-          Invoke-WebRequest -Uri $url -OutFile sdrsharp.zip -UseBasicParsing
+          Invoke-WebRequest -Uri $url -OutFile sdrsharp.zip -UseBasicParsing -MaximumRedirection 10
+          $size = (Get-Item sdrsharp.zip).Length
+          Write-Host "Downloaded sdrsharp.zip ($size bytes)"
           Expand-Archive -Path sdrsharp.zip -DestinationPath sdrsharp -Force
           foreach ($dll in 'SDRSharp.Common.dll','SDRSharp.Radio.dll','SDRSharp.PanView.dll') {
             $src = Get-ChildItem -Path sdrsharp -Recurse -Filter $dll | Select-Object -First 1
-            if (-not $src) { throw "Missing $dll in the SDR# download" }
+            if (-not $src) {
+              Write-Host "Extracted contents:"
+              Get-ChildItem -Path sdrsharp -Recurse -Filter '*.dll' | ForEach-Object { Write-Host "  $($_.FullName)" }
+              throw "Missing $dll in the SDR# download"
+            }
             Copy-Item $src.FullName -Destination (Join-Path 'libs' $dll) -Force
             Write-Host "Copied $($src.FullName) -> libs/$dll"
           }
