@@ -60,7 +60,7 @@ gzip でない／JMA でないチャンクも復元・報告されますが、XM
 ```
 .
 ├── SDRSharp.JAlert/
-│   ├── SDRSharp.JAlert.csproj   # net9.0-windows, x86, WinForms, unsafe
+│   ├── SDRSharp.JAlert.csproj   # net8.0-windows, x86, WinForms, unsafe
 │   ├── JAlertPlugin.cs          # ISharpPlugin エントリポイント
 │   ├── JAlertProcessor.cs       # IIQProcessor ストリームフック（NCO + Receiver + シンク）
 │   ├── JAlertPanel.cs           # WinForms サイドパネル
@@ -71,54 +71,62 @@ gzip でない／JMA でないチャンクも復元・報告されますが、XM
 │   ├── Decode/                  # gunzip, 警報モデル + デコーダ, ビットパイプライン, 受信機
 │   ├── Sink/                    # ファイル / TCP JSONL シンク + 警報 JSON シリアライザ
 │   └── Ui/                      # GDI+ スパークライン + コンステレーション表示
-├── Plugins.json.example         # SDR# 登録用スニペット
+├── sdk/                         # SDR# 参照（スタブ）アセンブリ一式
 ├── .github/workflows/build.yml  # CI: ビルド + リリース
 └── docs/JSONL_FORMAT.md         # JSONL 出力スキーマ
 ```
 
 ## ビルド
 
-公式 SDR#（Airspy）ビルドに合わせ、**.NET 9（`net9.0-windows`）、x86** を対象と
-します。
+**.NET 8（`net8.0-windows`）、x86** を対象とします。現行の SDR# パッケージは
+`SDRSharp.dotnet8.exe` と `SDRSharp.dotnet9.exe` の両方を同梱し、既定は .NET 8
+ホストです（changelog に "reverted to dotnet 8.0 until the plugins follow"）。
+`net8.0` プラグインは**両方**のホストで読み込めますが、`net9.0` プラグインは
+.NET 8 ホストでは読み込めません。
 
 ### GitHub Actions（推奨）
 
 `.github/workflows/build.yml` は push のたびにプラグインをビルドし、`v*` タグを
 push したとき（例: `git tag v1.0.0 && git push --tags`）にリリースへ成果物を
-添付します。CI は `SDRSharp.*` 参照 DLL を解決するために公式 SDR# x86 ビルドを
-ダウンロードします。これらの DLL はリポジトリには**コミットしません**。
+添付します。
+
+現行 SDR# は単一ファイルの自己完結型 exe のため、管理対象の `SDRSharp.*`
+アセンブリは個別 DLL として配布されません。プラグインは [`sdk/`](sdk/) 配下の
+最小の**参照（スタブ）アセンブリ**に対してコンパイルし、実行時に SDR# 本体の
+実アセンブリへバインドします。詳細は [sdk/README.md](sdk/README.md)。
 
 ### ローカルビルド
 
-SDR# 参照アセンブリは再配布不可のため、まずお使いの SDR# インストールフォルダから
-`./libs/` にコピーしてください。
-
-```
-libs/SDRSharp.Common.dll
-libs/SDRSharp.Radio.dll
-libs/SDRSharp.PanView.dll
-```
-
-その後:
-
 ```sh
+# 参照スタブを ./libs にビルドしてから本体をビルド
+dotnet build sdk/SDRSharp.Radio/SDRSharp.Radio.csproj   -c Release
+dotnet build sdk/SDRSharp.PanView/SDRSharp.PanView.csproj -c Release
+dotnet build sdk/SDRSharp.Common/SDRSharp.Common.csproj  -c Release
+mkdir -p libs && cp sdk/*/bin/Release/net8.0-windows/SDRSharp.*.dll libs/
+
 dotnet build SDRSharp.JAlert/SDRSharp.JAlert.csproj -c Release /p:Platform=x86
 ```
 
-（Windows 以外のホストでは `/p:EnableWindowsTargeting=true` を追加してください。
-コンパイルは通りますが、プラグインの実行は Windows 上の SDR# 内に限られます。）
+（Windows 以外のホストでは各コマンドに `/p:EnableWindowsTargeting=true` を追加。
+コンパイルは通りますが、実行は Windows 上の SDR# 内に限られます。）
 
 ## SDR# へのインストール
 
-1. `SDRSharp.JAlert.dll` を SDR# フォルダ（`SDRSharp.exe` と同じ場所）にコピー。
-2. SDR# の `Plugins.json` にエントリを追加します
-   （[Plugins.json.example](Plugins.json.example) 参照）:
-   ```json
-   "J-ALERT Decoder": "SDRSharp.JAlert.JAlertPlugin,SDRSharp.JAlert"
-   ```
-3. SDR# を起動し、**J-ALERT Decoder** パネルを開いて **Play** し、J-ALERT
-   キャリアに同調します。デシメーション／ズームを、キャリア周辺に少なくとも約
-   400 kHz の IQ 帯域が残るように設定してください（信号は約 346 kHz を占有）。
+現行 SDR# は `Plugins/` ディレクトリ（`SDRSharp.config` の
+`core.pluginsDirectory`）からプラグインを**自動検出**します。`Plugins.json` も
+設定ファイルの編集も**不要**です。
+
+1. SDR# の `Plugins` ディレクトリ内にフォルダを作り、DLL を入れます。例:
+   `Plugins/SDRSharp.JAlert/SDRSharp.JAlert.dll`（リリースの zip はこの構成済み
+   なので、`Plugins/` に展開するだけで OK）。
+2. SDR#（既定の `SDRSharp.dotnet8.exe`）を起動。**Plugins** メニューに
+   **J-ALERT Decoder** が表示されます。
+3. **Play** して J-ALERT キャリアに同調します。デシメーション／ズームを、
+   キャリア周辺に少なくとも約 400 kHz の IQ 帯域が残るように設定してください
+   （信号は約 346 kHz を占有）。
+
+プラグインが表示されない場合は、SDR# フォルダの `PluginError.log` に読み込み
+エラーが記録されます。
 
 パネルにはロック状態、BPSK コンステレーション、キャリア／Costas オフセット、推定
 ビット誤り率、HDLC フレーム数、および最新のデコード済み警報（タイトル／見出し／
@@ -145,7 +153,7 @@ dotnet build SDRSharp.JAlert/SDRSharp.JAlert.csproj -c Release /p:Platform=x86
 
 | 対象 | 対応 |
 |---|---|
-| Windows（SDR#、.NET 9、x86） | 対応 |
+| Windows（SDR#、.NET 8、x86） | 対応 |
 | Linux / macOS | 非対応（SDR# は Windows 専用） |
 
 ## ライセンス

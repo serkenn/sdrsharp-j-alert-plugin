@@ -64,7 +64,7 @@ converter bug makes it always wrong); the per-chunk `body_crc32` is verified.
 ```
 .
 ├── SDRSharp.JAlert/
-│   ├── SDRSharp.JAlert.csproj   # net9.0-windows, x86, WinForms, unsafe
+│   ├── SDRSharp.JAlert.csproj   # net8.0-windows, x86, WinForms, unsafe
 │   ├── JAlertPlugin.cs          # ISharpPlugin entry point
 │   ├── JAlertProcessor.cs       # IIQProcessor stream hook (NCO + Receiver + sinks)
 │   ├── JAlertPanel.cs           # WinForms side panel
@@ -75,54 +75,63 @@ converter bug makes it always wrong); the per-chunk `body_crc32` is verified.
 │   ├── Decode/                  # gunzip, alert model + decoder, bit pipeline, receiver
 │   ├── Sink/                    # file / TCP JSONL sinks + alert JSON serializer
 │   └── Ui/                      # GDI+ sparkline + constellation view
-├── Plugins.json.example         # SDR# registration snippet
+├── sdk/                         # minimal SDR# reference ("stub") assemblies
 ├── .github/workflows/build.yml  # CI: build + Release
 └── docs/JSONL_FORMAT.md         # JSONL output schema
 ```
 
 ## Building
 
-The plugin targets **.NET 9 (`net9.0-windows`), x86** to match the official SDR#
-(Airspy) build.
+The plugin targets **.NET 8 (`net8.0-windows`), x86**. The current SDR# package
+ships both `SDRSharp.dotnet8.exe` and `SDRSharp.dotnet9.exe` and the default is
+the .NET 8 host (per the changelog, "reverted to dotnet 8.0 until the plugins
+follow"); a `net8.0` plugin loads in **both** hosts, whereas a `net9.0` plugin
+will not load in the .NET 8 host.
 
 ### GitHub Actions (recommended)
 
 `.github/workflows/build.yml` builds the plugin on every push and attaches a
 release asset whenever a `v*` tag is pushed (e.g. `git tag v1.0.0 &&
-git push --tags`). CI downloads the official SDR# x86 build to resolve the
-`SDRSharp.*` reference DLLs — they are **not** committed to the repo.
+git push --tags`).
+
+Modern SDR# is a single-file self-contained executable, so the managed
+`SDRSharp.*` assemblies aren't shipped as separate DLLs. The plugin is compiled
+against minimal **reference ("stub") assemblies** under [`sdk/`](sdk/) that mirror
+the plugin API; at run time the references bind to SDR#'s real assemblies. See
+[sdk/README.md](sdk/README.md).
 
 ### Local build
 
-The SDR# reference assemblies are not redistributable, so copy them from your
-SDR# install folder into `./libs/` first:
-
-```
-libs/SDRSharp.Common.dll
-libs/SDRSharp.Radio.dll
-libs/SDRSharp.PanView.dll
-```
-
-then:
-
 ```sh
+# build the reference stubs into ./libs, then the plugin
+dotnet build sdk/SDRSharp.Radio/SDRSharp.Radio.csproj   -c Release
+dotnet build sdk/SDRSharp.PanView/SDRSharp.PanView.csproj -c Release
+dotnet build sdk/SDRSharp.Common/SDRSharp.Common.csproj  -c Release
+mkdir -p libs && cp sdk/*/bin/Release/net8.0-windows/SDRSharp.*.dll libs/
+
 dotnet build SDRSharp.JAlert/SDRSharp.JAlert.csproj -c Release /p:Platform=x86
 ```
 
-(On a non-Windows host add `/p:EnableWindowsTargeting=true` — it compiles, but the
-plugin only runs inside SDR# on Windows.)
+(On a non-Windows host add `/p:EnableWindowsTargeting=true` to each — it compiles,
+but the plugin only runs inside SDR# on Windows.)
 
 ## Installing into SDR#
 
-1. Copy `SDRSharp.JAlert.dll` into the SDR# folder (next to `SDRSharp.exe`).
-2. Add the plugin entry to SDR#'s `Plugins.json` — see
-   [Plugins.json.example](Plugins.json.example):
-   ```json
-   "J-ALERT Decoder": "SDRSharp.JAlert.JAlertPlugin,SDRSharp.JAlert"
-   ```
-3. Start SDR#, open the **J-ALERT Decoder** panel, **Play**, and tune onto the
-   J-ALERT carrier. Make sure the decimation/zoom leaves at least ~400 kHz of IQ
-   bandwidth around the carrier (the signal occupies ~346 kHz).
+The current SDR# auto-discovers plugins from its `Plugins/` directory (set by
+`core.pluginsDirectory` in `SDRSharp.config`) — there is **no `Plugins.json`** and
+no config edit needed.
+
+1. Create a folder for the plugin inside SDR#'s `Plugins` directory and copy the
+   DLL into it, e.g. `Plugins/SDRSharp.JAlert/SDRSharp.JAlert.dll`. (The release
+   zip is already laid out this way — just extract it into `Plugins/`.)
+2. Start SDR# (the default `SDRSharp.dotnet8.exe`). The plugin appears in the
+   **Plugins** menu as **J-ALERT Decoder**.
+3. **Play**, then tune onto the J-ALERT carrier. Make sure the decimation/zoom
+   leaves at least ~400 kHz of IQ bandwidth around the carrier (the signal
+   occupies ~346 kHz).
+
+If the plugin doesn't appear, check `PluginError.log` in the SDR# folder for the
+load error.
 
 The panel shows lock state, a BPSK constellation, carrier/Costas offsets, the
 estimated bit error rate, HDLC frame counts, and the latest decoded alert
@@ -149,7 +158,7 @@ Output paths default to `%APPDATA%\SDRSharp.JAlert\j_alert\` (the JSONL file to
 
 | Target | Supported |
 |---|---|
-| Windows (SDR#, .NET 9, x86) | yes |
+| Windows (SDR#, .NET 8, x86) | yes |
 | Linux / macOS | no (SDR# is Windows-only) |
 
 ## License

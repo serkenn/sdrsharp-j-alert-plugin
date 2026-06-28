@@ -17,10 +17,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up .NET 9
+      - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          # net8.0-windows loads in both SDRSharp.dotnet8.exe and
+          # SDRSharp.dotnet9.exe (a .NET 9 host can load a net8 assembly).
+          dotnet-version: |
+            8.0.x
+            9.0.x
 
       # Modern SDR# ships as a single-file self-contained exe, so the managed
       # SDRSharp.* assemblies are not available as redistributable DLLs. Build the
@@ -35,7 +39,7 @@ jobs:
           foreach ($proj in 'SDRSharp.Radio','SDRSharp.PanView','SDRSharp.Common') {
             dotnet build "sdk/$proj/$proj.csproj" -c Release
             if ($LASTEXITCODE -ne 0) { throw "Failed to build stub $proj" }
-            Copy-Item "sdk/$proj/bin/Release/net9.0-windows/$proj.dll" -Destination "libs/$proj.dll" -Force
+            Copy-Item "sdk/$proj/bin/Release/net8.0-windows/$proj.dll" -Destination "libs/$proj.dll" -Force
             Write-Host "Built libs/$proj.dll"
           }
 
@@ -48,11 +52,13 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $dll = Get-ChildItem -Path SDRSharp.JAlert/bin -Recurse -Filter SDRSharp.JAlert.dll | Select-Object -First 1
           if (-not $dll) { throw "Build did not produce SDRSharp.JAlert.dll" }
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item $dll.FullName -Destination dist/ -Force
-          Copy-Item Plugins.json.example -Destination dist/ -Force
-          Copy-Item README.md -Destination dist/ -Force
-          Compress-Archive -Path dist/* -DestinationPath SDRSharp.JAlert.zip -Force
+          # Lay out the zip so it extracts into SDR#'s Plugins/ folder as
+          # Plugins/SDRSharp.JAlert/SDRSharp.JAlert.dll (auto-discovered; no
+          # Plugins.json or config edit needed).
+          New-Item -ItemType Directory -Force -Path dist/SDRSharp.JAlert | Out-Null
+          Copy-Item $dll.FullName -Destination dist/SDRSharp.JAlert/ -Force
+          Copy-Item README.md -Destination dist/SDRSharp.JAlert/ -Force
+          Compress-Archive -Path dist/SDRSharp.JAlert -DestinationPath SDRSharp.JAlert.zip -Force
 
       - uses: actions/upload-artifact@v4
         with:
