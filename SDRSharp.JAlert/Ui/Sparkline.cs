@@ -62,7 +62,10 @@ namespace SDRSharp.JAlert.Ui
             float avail = Width;
             Color captionCol = Color.FromArgb(160, ForeColor);
 
-            using (Font font = Font)
+            // NOTE: do not wrap `Font` in a using — it is the control's own font
+            // and must not be disposed (doing so makes the next paint throw
+            // ArgumentException "Parameter is not valid" from DrawString).
+            Font font = Font;
             using (SolidBrush capBrush = new SolidBrush(captionCol))
             using (SolidBrush valBrush = new SolidBrush(BarColor))
             {
