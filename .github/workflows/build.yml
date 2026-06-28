@@ -61,10 +61,14 @@ jobs:
           New-Item -ItemType Directory -Force -Path realdlls | Out-Null
           python tools/extract_bundle.py sdrdist/SDRSharp.dotnet8.exe realdlls
           if (-not (Test-Path realdlls/SDRSharp.Common.dll)) { throw "Failed to extract SDRSharp.Common.dll from SDR#" }
-          dotnet build tools/PluginLoadCheck/PluginLoadCheck.csproj -c Release
-          $checker = Get-ChildItem -Path tools/PluginLoadCheck/bin -Recurse -Filter PluginLoadCheck.dll | Select-Object -First 1
+          # SDR#'s managed assemblies are x86 (ReadyToRun) — the host is a 32-bit
+          # process — so the checker must run as x86 too. Publish it self-contained
+          # win-x86 so it brings its own x86 desktop runtime.
+          dotnet publish tools/PluginLoadCheck/PluginLoadCheck.csproj -c Release -r win-x86 --self-contained true
+          $checker = Get-ChildItem -Path tools/PluginLoadCheck/bin -Recurse -Filter PluginLoadCheck.exe | Select-Object -First 1
+          if (-not $checker) { throw "PluginLoadCheck.exe not produced" }
           $plugin = Get-ChildItem -Path SDRSharp.JAlert/bin -Recurse -Filter SDRSharp.JAlert.dll | Select-Object -First 1
-          dotnet $checker.FullName $plugin.FullName (Resolve-Path realdlls)
+          & $checker.FullName $plugin.FullName (Resolve-Path realdlls)
           if ($LASTEXITCODE -ne 0) { throw "Plugin load verification failed" }
 
       - name: Stage package
