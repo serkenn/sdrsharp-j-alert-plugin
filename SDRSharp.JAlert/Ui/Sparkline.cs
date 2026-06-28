@@ -23,6 +23,7 @@ namespace SDRSharp.JAlert.Ui
         public string Caption { get; set; } = "";
         public string CurrentText { get; set; } = "";
         public Color BarColor { get; set; } = Color.FromArgb(70, 180, 85);
+        public Color CaptionColor { get; set; } = Color.Gray;
 
         public Sparkline()
         {
@@ -60,7 +61,7 @@ namespace SDRSharp.JAlert.Ui
 
             float rowH = Height;
             float avail = Width;
-            Color captionCol = Color.FromArgb(160, ForeColor);
+            Color captionCol = CaptionColor;
 
             // NOTE: do not wrap `Font` in a using — it is the control's own font
             // and must not be disposed (doing so makes the next paint throw

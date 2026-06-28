@@ -54,9 +54,16 @@ namespace SDRSharp.JAlert
 
             Width = 300;
             Height = 700;
-            BackColor = SystemColors.Control;
 
             BuildUi();
+
+            // SDR# applies its (dark) theme to the panel after construction by
+            // setting our BackColor/ForeColor. Re-sync the controls it doesn't
+            // theme itself (custom-painted sparklines + input controls) whenever
+            // that happens, and once now for the non-themed default.
+            BackColorChanged += (s, e) => ApplyTheme();
+            ForeColorChanged += (s, e) => ApplyTheme();
+            ApplyTheme();
 
             _sparkCoarse.SetFixedRange(-300000.0, 300000.0);
             _sparkCostas.SetFixedRange(-2000.0, 2000.0);
@@ -217,6 +224,60 @@ namespace SDRSharp.JAlert
                 BorderStyle = BorderStyle.Fixed3D,
                 Margin = new Padding(0, 4, 0, 4),
             };
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            ApplyTheme();
+        }
+
+        private bool _applyingTheme;
+
+        // Match the controls SDR#'s theme engine does not recolor (custom-painted
+        // sparklines + input controls) to the panel's effective colors, deriving
+        // a readable text/field shade from the background luminance so it works in
+        // both the dark and light themes.
+        private void ApplyTheme()
+        {
+            if (_applyingTheme) return;
+            _applyingTheme = true;
+            try
+            {
+                Color back = BackColor;
+                Color fore = ForeColor;
+                bool dark = (0.299 * back.R + 0.587 * back.G + 0.114 * back.B) < 128.0;
+                // A field shade slightly offset from the panel background.
+                Color field = dark ? ControlPaint.Light(back, 0.04f) : Color.White;
+                Color border = dark ? ControlPaint.Light(back, 0.3f) : SystemColors.ControlDark;
+
+                foreach (Sparkline s in new[] { _sparkCoarse, _sparkCostas, _sparkQuality })
+                {
+                    s.BackColor = back;
+                    s.CaptionColor = fore;
+                }
+
+                _recentList.BackColor = field;
+                _recentList.ForeColor = fore;
+
+                foreach (TextBox tb in new[] { _xmlDirBox, _jsonlFileBox })
+                {
+                    tb.BackColor = field;
+                    tb.ForeColor = fore;
+                    tb.BorderStyle = BorderStyle.FixedSingle;
+                }
+
+                _tcpPort.BackColor = field;
+                _tcpPort.ForeColor = fore;
+
+                _counters.ForeColor = fore;
+                _latest.ForeColor = fore;
+                _ = border; // reserved for future custom borders
+            }
+            finally
+            {
+                _applyingTheme = false;
+            }
         }
 
         private void OnJsonlFileToggled(object sender, EventArgs e)
