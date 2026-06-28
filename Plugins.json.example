@@ -1,0 +1,6 @@
+{
+  "_comment": "Add the J-ALERT entry below into your SDR# Plugins.json (in the SDR# folder). Keep your existing entries; just add this key/value to the magicLine/sharpPlugins object. The value is 'Namespace.Class,AssemblyName'.",
+  "sharpPlugins": {
+    "J-ALERT Decoder": "SDRSharp.JAlert.JAlertPlugin,SDRSharp.JAlert"
+  }
+}

@@ -1,16 +1,22 @@
-build/
+# .NET build output
+bin/
+obj/
 dist/
-external/
-# CI: per-target zlib built from source
-zlib-*/
-zbuild/
-zinstall/
-zlib.tar.gz
-.cache/
-compile_commands.json
+
+# SDR# reference DLLs (not redistributable; provided by CI or copied locally)
+libs/
+
+# CI scratch
+sdrsharp/
+sdrsharp.zip
+SDRSharp.JAlert.zip
+
+# IDE / editor
+.vs/
 .vscode/
 .idea/
-*.o
-*.so
-*.dylib
+*.user
+
+# Artifacts
 *.dll
+*.pdb

@@ -1,151 +1,153 @@
-# sdrplusplus-j-alert-plugin
+# sdrsharp-j-alert-plugin
 
 *English: [README.md](README.md)*
 
-**J-ALERT**（全国瞬時警報システム）衛星ダウンリンクを復調・復号する
-[SDR++](https://github.com/AlexandreRouma/SDRPlusPlus) 用のアウトオブツリー
-デコーダプラグインです。RF から直接、地上系と同一の NowcastPacket を
-（完全オフライン・地上系参照なしで）復元します。gzip 圧縮された JMA 電文
-チャンクは、さらにアラート XML へ展開します。
+[SDR# (SDRSharp)](https://airspy.com/download/) 用のプラグインで、**J-ALERT**
+（全国瞬時警報システム）の衛星ダウンリンクを復調・デコードします。地上系を一切
+参照せず、完全オフラインで RF から地上系と同一の NowcastPacket を復元します。
+gzip 圧縮された JMA 電文チャンクは、さらに展開して警報 XML まで復元します。
 
-J-ALERT 衛星リンクは暗号化されていない、標準的な COTS 衛星モデム波形です。
+本プラグインは、元々 SDR++ 向けに書かれた信号処理コアの C# / .NET 移植版です。
+DSP・FEC・フレーミング・デコードの各段はバイト単位で等価であり、プラットフォーム
+層のみを SDR# のプラグイン API（`ISharpPlugin` + `IIQProcessor` + WinForms サイド
+パネル）に合わせて書き直しています。
+
+J-ALERT 衛星リンクは、暗号化されていない一般的な COTS 衛星モデム波形です。
 
 | 項目 | 値 |
 |---|---|
-| 変調 | BPSK、連続 SCPC 搬送波 |
-| シンボルレート | 256 ksym/s（FEC 後 128 kbps）|
-| FEC | 畳み込み K=7、生成多項式 (171, 133)₈（"Voyager"）、レート 1/2 |
-| スクランブラ | IESS-308 自己同期、1 + x³ + x²⁰ |
+| 変調 | BPSK、連続 SCPC キャリア |
+| シンボルレート | 256 ksym/s（FEC 後 128 kbps） |
+| FEC | 畳み込み符号 K=7、生成多項式 (171, 133)₈（"Voyager"）、レート 1/2 |
+| スクランブラ | IESS-308 自己同期型、1 + x³ + x²⁰ |
 | フレーミング | HDLC（0x7E フラグ、ビットスタッフィング）、CRC-16/X.25 FCS |
-| ペイロード | NowcastPacket（チャンク化）。JMA 電文チャンクは gzip メンバを内包 → アラート XML |
-| 暗号 | なし |
+| ペイロード | NowcastPacket（チャンク化）。JMA 電文チャンクは gzip メンバ → 警報 XML を内包 |
+| 暗号化 | なし |
 
 ## 信号処理チェーン
 
 ```
-VFO IQ (1.024 MHz)
- └─ 粗キャリア再生  (2乗信号のブロック FFT ピーク → 2·fc)
- └─ ポリフェーズ リサンプル to 1.024 MHz (4 sps × 256 ksym/s)
+SDR# DecimatedAndFilteredIQ（スペクトラム中心周波数を中心とする）
+ └─ NCO シフト（Frequency − CenterFrequency → ベースバンド）
+ └─ 粗キャリア回復（二乗信号のブロック FFT ピーク検出 → 2·fc）
+ └─ 1.024 MHz へポリフェーズ・リサンプリング（4 sps × 256 ksym/s）
  └─ AGC
- └─ 整合フィルタ + シンボルタイミング  (ポリフェーズ RRC β=0.35 + Müller-Müller TED)
- └─ 判定指向 Costas ループ  → 軟値シンボル
- └─ 軟判定 Viterbi  (K=7, (171,133), ストリーミング トレースバック)
- └─ 2回差動復号 + 反転        (BPSK 180° 位相曖昧性を解消)
- └─ IESS-308 自己同期デスクランブル  (s ⊕ s≪3 ⊕ s≪20)
- └─ HDLC デフレーム + デスタッフ  (0x7E フラグ、CRC-16/X.25 検証)
- └─ NowcastPacket 解析  (ヘッダ + チャンクエントリ。チャンク毎に body CRC-32)
- └─ チャンク再結合  → 復元ファイル（地上系とバイト一致）
-                       (複数チャンク／複数パケット、id + seq による)
- └─ [任意] gzip 済み JMA 電文チャンク (flags==3, wrmx/eprx/issx/ioeq):
-        JMA Socket Packet ヘッダ → gunzip → JMA アラート XML
+ └─ 整合フィルタ + シンボルタイミング（ポリフェーズ RRC β=0.35 + Müller-Müller TED）
+ └─ 判定指向 Costas ループ → ソフトシンボル
+ └─ 軟判定ビタビ（K=7, (171,133)、ストリーミング・トレースバック）
+ └─ 二重差動復号 + 反転（BPSK 180° 位相曖昧性を解決）
+ └─ IESS-308 自己同期デスクランブル（s ⊕ s≪3 ⊕ s≪20）
+ └─ HDLC デフレーム + デスタッフ（0x7E フラグ、CRC-16/X.25 検証）
+ └─ NowcastPacket 解析（ヘッダ + チャンクエントリ、チャンクごとに body CRC-32）
+ └─ チャンク再構成 → 地上系とバイト単位で一致する復元ファイル
+                     （id + seq による複数チャンク／複数パケット対応）
+ └─ ［任意］gzip 圧縮 JMA 電文チャンク（flags==3, wrmx/eprx/issx/ioeq）の場合:
+        JMA ソケットパケットヘッダ → gunzip → JMA 警報 XML
 ```
 
-バイト一致で復元される成果物は NowcastPacket／再結合チャンクファイルです。
-XML への展開は、gzip 済み JMA 電文チャンク（`flags==3`）にのみ適用される
-任意の最終ステップです。非 gzip／非 JMA チャンクも復元・報告されますが、
-XML 化はされません。
+バイト単位で正確な復元成果物は NowcastPacket／再構成チャンクファイルです。XML への
+展開は gzip 圧縮 JMA 電文チャンク（`flags==3`）にのみ適用される任意の最終段です。
+gzip でない／JMA でないチャンクも復元・報告されますが、XML 化はされません。
 
-NowcastPacket／チャンク解析は完全に構造化されています： `NWCS` ヘッダ、
-`chunk-entry` テーブル、チャンク毎の `body_crc32` 検証、チャンクメタデータ
-（`filename`、`flags==3` = gzip）、コンテンツ分類としての chunk-type コード
-（`wrmx`/`eprx`/`issx`/`ioeq`）。チャンクやパケットに分割されたファイルは
-`(id, seq, num_chunks)` で再結合されます。パケットの `header_crc32` は意図的に
-無視します（変換サーバの既知のバグで常に誤った値になるため）。
-
-レート 1/2 符号のペア位相だけが残る曖昧性です。受信機は 2 本の Viterbi＋フレーム
-チェーンを並行実行し（位相ごとに 1 本）、正しい方を HDLC FCS に選ばせます
-（誤位相は CRC 不一致のゴミしか生みません）。搬送波位相／ビット極性の曖昧性は
-差動復号が吸収するため、反転探索は不要です。
+レート 1/2 符号のペアリング位相だけが唯一残る曖昧性です。受信機は位相ごとに 2 本の
+ビタビ + フレーム処理チェーンを並列実行し、HDLC FCS に正しい方を選ばせます（誤った
+位相は CRC を通らないゴミしか生成しません）。キャリア位相／ビット極性の曖昧性は
+差動復号が吸収します。パケットの `header_crc32` は意図的に無視します（プロトコル
+変換器の既知のバグで常に不正）。チャンクごとの `body_crc32` は検証します。
 
 ## リポジトリ構成
 
 ```
 .
-├── .devcontainer/        # VS Code Dev Container (Ubuntu 24.04 + クロスツールチェーン + zlib)
-├── cmake/toolchains/     # aarch64 / armhf CMake ツールチェーンファイル
-├── external/SDRPlusPlus/ # SDR++ ソース (scripts/fetch-sdrpp.sh)
-├── scripts/              # fetch-sdrpp.sh, build-all.sh
-├── src/
-│   ├── main.cpp          # SDR++ モジュール + パネル
-│   ├── dsp/              # complex, agc, fft, resampler, RRC, PFB clock sync, BPSK demod
-│   ├── fec/              # 畳み込み符号 + ストリーミング軟判定 Viterbi
-│   ├── frame/            # 差動, デスクランブラ, HDLC, NowcastPacket
-│   ├── decode/           # gunzip, アラートモデル, ビットパイプライン, receiver
-│   ├── sink/             # file / TCP JSONL シンク + アラート JSON シリアライザ
-│   └── ui/               # sparkline, コンスタレーション表示
-├── CMakeLists.txt
-└── README.md
+├── SDRSharp.JAlert/
+│   ├── SDRSharp.JAlert.csproj   # net9.0-windows, x86, WinForms, unsafe
+│   ├── JAlertPlugin.cs          # ISharpPlugin エントリポイント
+│   ├── JAlertProcessor.cs       # IIQProcessor ストリームフック（NCO + Receiver + シンク）
+│   ├── JAlertPanel.cs           # WinForms サイドパネル
+│   ├── JAlertSettings.cs        # JSON 設定（%APPDATA%\SDRSharp.JAlert）
+│   ├── Dsp/                     # Complex32, Fft, Agc, FilterDesign, リサンプラ, PFB クロック同期, BpskDemod
+│   ├── Fec/                     # 畳み込み符号 + ストリーミング軟判定ビタビ
+│   ├── Frame/                   # 差動, デスクランブラ, HDLC, CRC-32, NowcastPacket, 再構成
+│   ├── Decode/                  # gunzip, 警報モデル + デコーダ, ビットパイプライン, 受信機
+│   ├── Sink/                    # ファイル / TCP JSONL シンク + 警報 JSON シリアライザ
+│   └── Ui/                      # GDI+ スパークライン + コンステレーション表示
+├── Plugins.json.example         # SDR# 登録用スニペット
+├── .github/workflows/build.yml  # CI: ビルド + リリース
+└── docs/JSONL_FORMAT.md         # JSONL 出力スキーマ
 ```
 
 ## ビルド
 
-### Dev Container（全ターゲット）
+公式 SDR#（Airspy）ビルドに合わせ、**.NET 9（`net9.0-windows`）、x86** を対象と
+します。
 
-```sh
-scripts/build-all.sh                 # linux-x86_64, linux-aarch64, linux-armhf → dist/
-TARGETS="linux-aarch64" scripts/build-all.sh
-BUILD_TYPE=Debug scripts/build-all.sh
+### GitHub Actions（推奨）
+
+`.github/workflows/build.yml` は push のたびにプラグインをビルドし、`v*` タグを
+push したとき（例: `git tag v1.0.0 && git push --tags`）にリリースへ成果物を
+添付します。CI は `SDRSharp.*` 参照 DLL を解決するために公式 SDR# x86 ビルドを
+ダウンロードします。これらの DLL はリポジトリには**コミットしません**。
+
+### ローカルビルド
+
+SDR# 参照アセンブリは再配布不可のため、まずお使いの SDR# インストールフォルダから
+`./libs/` にコピーしてください。
+
+```
+libs/SDRSharp.Common.dll
+libs/SDRSharp.Radio.dll
+libs/SDRSharp.PanView.dll
 ```
 
-`build-all.sh` は SDR++ ソースを更新してから、各ターゲットを CMake
-（Ninja があれば Ninja、なければ Make）で構成・ビルドし、共有ライブラリを
-`dist/<target>/` に収集します。
-
-### 単一ネイティブビルド
+その後:
 
 ```sh
-cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+dotnet build SDRSharp.JAlert/SDRSharp.JAlert.csproj -c Release /p:Platform=x86
 ```
 
-プラグインに必要なのは SDR++ ヘッダと zlib のみです。`sdrpp_core` の
-シンボルはロード時に解決されます。
+（Windows 以外のホストでは `/p:EnableWindowsTargeting=true` を追加してください。
+コンパイルは通りますが、プラグインの実行は Windows 上の SDR# 内に限られます。）
 
-## リリース
+## SDR# へのインストール
 
-GitHub Actions（[.github/workflows/build.yml](.github/workflows/build.yml)）が
-Linux の **x86_64** / **x86 (i686)** / **ARM64 (aarch64)** / **ARM32 (armhf)**
-向けにプラグインをビルドし、`v*` タグを push するたびに 4 つの `.so` を GitHub
-Release に添付します（例: `git tag v1.0.0 && git push --tags`）。zlib は静的
-リンクされるため、各バイナリは自己完結しています。
+1. `SDRSharp.JAlert.dll` を SDR# フォルダ（`SDRSharp.exe` と同じ場所）にコピー。
+2. SDR# の `Plugins.json` にエントリを追加します
+   （[Plugins.json.example](Plugins.json.example) 参照）:
+   ```json
+   "J-ALERT Decoder": "SDRSharp.JAlert.JAlertPlugin,SDRSharp.JAlert"
+   ```
+3. SDR# を起動し、**J-ALERT Decoder** パネルを開いて **Play** し、J-ALERT
+   キャリアに同調します。デシメーション／ズームを、キャリア周辺に少なくとも約
+   400 kHz の IQ 帯域が残るように設定してください（信号は約 346 kHz を占有）。
 
-Windows は現時点では対象外です（Windows プラグインは MSVC ビルドの SDR++ core
-へのリンクが必須で ELF の未解決シンボル方式が使えないため）。
+パネルにはロック状態、BPSK コンステレーション、キャリア／Costas オフセット、推定
+ビット誤り率、HDLC フレーム数、および最新のデコード済み警報（タイトル／見出し／
+時刻）が表示されます。
 
-## SDR++ へのインストール
+## 出力
 
-`j_alert_decoder.so` を SDR++ のプラグインディレクトリ（Linux 既定
-`/usr/lib/sdrpp/plugins/`）にコピーするか、Module Manager から読み込んで
-インスタンスを作成します。VFO を J-ALERT 搬送波に合わせると、パネルに
-ロック状態、BPSK コンスタレーション、キャリア／Costas オフセット、推定
-ビットエラーレート、HDLC フレーム数、最新の復号アラート（標題／見出し／
-時刻）が表示されます。復元したファイルは次のように出力できます：
+復元ファイルは次の方法で出力できます。
 
-- JSONL を **ファイル**および／または **TCP** ポートへストリーム配信。
-  各復元ファイルにつきペイロードをインラインで含みます（gzip 済み JMA 電文は
-  アラート XML、非 XML 電文は生バイトの base64）。
-  [docs/JSONL_FORMAT.ja.md](docs/JSONL_FORMAT.ja.md)
-  （[English](docs/JSONL_FORMAT.md)）参照。
-- **Output folder** へ書き出し（**File output** チェックボックスで有効化）：
-  復号 JMA 電文は `<timestamp>.xml`、その他（非 XML）電文は生バイトを
-  `<timestamp>.<chunk_type>.bin` に保存。
+- **ファイル**および／または **TCP** ポートへ JSONL としてストリーミング。各復元
+  ファイルをペイロードをインラインで含めて出力します（gzip 圧縮 JMA 電文は警報
+  XML、XML でない電文は生バイトの base64）。詳細は
+  [docs/JSONL_FORMAT.md](docs/JSONL_FORMAT.md)
+  （[English](docs/JSONL_FORMAT.md)）を参照、
+- **出力フォルダ**への書き出し（**File output** チェックボックスで有効化）:
+  デコード済み JMA 電文は `<timestamp>.xml`、その他（XML でない）電文は生バイトを
+  `<timestamp>.<chunk_type>.bin` として保存。
 
-出力パスの既定値は SDR++ 設定ルート配下です： **Output folder** が
-`~/.config/sdrpp/j_alert/`、**JSONL file** が
-`~/.config/sdrpp/j_alert/decoded.jsonl`。どちらもパネルで変更できます。
-
-すべての出力設定は SDR++ 設定にインスタンスごとに永続化されます。
+出力パスの既定値は `%APPDATA%\SDRSharp.JAlert\j_alert\`（JSONL ファイルは同所の
+`decoded.jsonl`）です。すべての出力設定は
+`%APPDATA%\SDRSharp.JAlert\settings.json` に保存されます。
 
 ## 対応プラットフォーム
 
-| ターゲット      | 対応 |
-|-----------------|------|
-| Linux x86_64    | あり |
-| Linux aarch64   | あり |
-| Linux armhf     | あり |
-| Windows         | なし |
-| macOS           | なし |
+| 対象 | 対応 |
+|---|---|
+| Windows（SDR#、.NET 9、x86） | 対応 |
+| Linux / macOS | 非対応（SDR# は Windows 専用） |
 
 ## ライセンス
 
-MIT ライセンス — [LICENSE](LICENSE) を参照。Copyright (c) 2026 KIRISHIKI Yudai。
+MIT License — [LICENSE](LICENSE) を参照。Copyright (c) 2026 KIRISHIKI Yudai.

@@ -1,12 +1,17 @@
-# sdrplusplus-j-alert-plugin
+# sdrsharp-j-alert-plugin
 
 *日本語: [README.ja.md](README.ja.md)*
 
-Out-of-tree decoder plugin for [SDR++](https://github.com/AlexandreRouma/SDRPlusPlus)
-that demodulates and decodes the **J-ALERT** (全国瞬時警報システム) satellite
-downlink — recovering the ground-system-identical NowcastPacket straight from RF,
-fully offline and with no reference to the terrestrial system. Gzipped JMA
-telegram chunks are additionally inflated to their alert XML.
+[SDR# (SDRSharp)](https://airspy.com/download/) plugin that demodulates and
+decodes the **J-ALERT** (全国瞬時警報システム) satellite downlink — recovering the
+ground-system-identical NowcastPacket straight from RF, fully offline and with no
+reference to the terrestrial system. Gzipped JMA telegram chunks are additionally
+inflated to their alert XML.
+
+This is a C# / .NET port of the signal-processing core originally written for
+SDR++; the DSP, FEC, framing and decode stages are byte-for-byte equivalent, with
+the platform layer rewritten against SDR#'s plugin API (`ISharpPlugin` +
+`IIQProcessor` + a WinForms side panel).
 
 The J-ALERT satellite link is an unencrypted, standard COTS satellite-modem
 waveform:
@@ -24,7 +29,8 @@ waveform:
 ## Signal chain
 
 ```
-VFO IQ (1.024 MHz)
+SDR# DecimatedAndFilteredIQ  (centered on the spectrum center frequency)
+ └─ NCO shift  (Frequency − CenterFrequency → baseband)
  └─ coarse carrier recovery  (block FFT-argmax on the squared signal → 2·fc)
  └─ polyphase resample to 1.024 MHz (4 sps × 256 ksym/s)
  └─ AGC
@@ -46,82 +52,85 @@ inflating it to XML is an optional final step that applies only to gzipped JMA
 telegram chunks (`flags==3`). Non-gzipped or non-JMA chunks are still recovered
 and reported, just not turned into XML.
 
-The NowcastPacket / chunk parser is fully structured: `NWCS` header,
-`chunk-entry` table, per-chunk `body_crc32` verification, chunk metadata
-(`filename`, `flags==3` = gzipped), and the chunk-type-code
-(`wrmx`/`eprx`/`issx`/`ioeq`) as the content category. Files split across chunks
-or packets are reassembled by `(id, seq, num_chunks)`. The packet `header_crc32`
-is intentionally ignored (a known protocol-converter bug makes it always wrong).
-
 The pairing phase of the rate-1/2 code is the only residual ambiguity; the
 receiver runs two Viterbi+frame chains in parallel (one per phase) and lets the
 HDLC FCS pick the correct one — the wrong phase produces only CRC-failing
 garbage. Carrier-phase / bit-polarity ambiguity is absorbed by the differential
-decode, so no inversion search is needed.
+decode. The packet `header_crc32` is intentionally ignored (a known protocol-
+converter bug makes it always wrong); the per-chunk `body_crc32` is verified.
 
 ## Repository layout
 
 ```
 .
-├── .devcontainer/        # VS Code Dev Container (Ubuntu 24.04 + cross toolchains + zlib)
-├── cmake/toolchains/     # aarch64 / armhf CMake toolchain files
-├── external/SDRPlusPlus/ # SDR++ source (scripts/fetch-sdrpp.sh)
-├── scripts/              # fetch-sdrpp.sh, build-all.sh
-├── src/
-│   ├── main.cpp          # SDR++ module + panel
-│   ├── dsp/              # complex, agc, fft, resampler, RRC, PFB clock sync, BPSK demod
-│   ├── fec/              # conv code + streaming soft Viterbi
-│   ├── frame/            # differential, descrambler, HDLC, NowcastPacket
-│   ├── decode/           # gunzip, alert model, bit pipeline, receiver
-│   ├── sink/             # file / TCP JSONL sinks + alert JSON serializer
-│   └── ui/               # sparkline, constellation view
-├── CMakeLists.txt
-└── README.md
+├── SDRSharp.JAlert/
+│   ├── SDRSharp.JAlert.csproj   # net9.0-windows, x86, WinForms, unsafe
+│   ├── JAlertPlugin.cs          # ISharpPlugin entry point
+│   ├── JAlertProcessor.cs       # IIQProcessor stream hook (NCO + Receiver + sinks)
+│   ├── JAlertPanel.cs           # WinForms side panel
+│   ├── JAlertSettings.cs        # JSON settings (%APPDATA%\SDRSharp.JAlert)
+│   ├── Dsp/                     # Complex32, Fft, Agc, FilterDesign, resampler, PFB clock sync, BpskDemod
+│   ├── Fec/                     # conv code + streaming soft Viterbi
+│   ├── Frame/                   # differential, descrambler, HDLC, CRC-32, NowcastPacket, reassembler
+│   ├── Decode/                  # gunzip, alert model + decoder, bit pipeline, receiver
+│   ├── Sink/                    # file / TCP JSONL sinks + alert JSON serializer
+│   └── Ui/                      # GDI+ sparkline + constellation view
+├── Plugins.json.example         # SDR# registration snippet
+├── .github/workflows/build.yml  # CI: build + Release
+└── docs/JSONL_FORMAT.md         # JSONL output schema
 ```
 
 ## Building
 
-### Dev Container (all targets)
+The plugin targets **.NET 9 (`net9.0-windows`), x86** to match the official SDR#
+(Airspy) build.
 
-```sh
-scripts/build-all.sh                 # linux-x86_64, linux-aarch64, linux-armhf → dist/
-TARGETS="linux-aarch64" scripts/build-all.sh
-BUILD_TYPE=Debug scripts/build-all.sh
+### GitHub Actions (recommended)
+
+`.github/workflows/build.yml` builds the plugin on every push and attaches a
+release asset whenever a `v*` tag is pushed (e.g. `git tag v1.0.0 &&
+git push --tags`). CI downloads the official SDR# x86 build to resolve the
+`SDRSharp.*` reference DLLs — they are **not** committed to the repo.
+
+### Local build
+
+The SDR# reference assemblies are not redistributable, so copy them from your
+SDR# install folder into `./libs/` first:
+
+```
+libs/SDRSharp.Common.dll
+libs/SDRSharp.Radio.dll
+libs/SDRSharp.PanView.dll
 ```
 
-`build-all.sh` refreshes the SDR++ source, then configures/builds each target
-with CMake (Ninja if available, otherwise Make) and collects the shared library
-into `dist/<target>/`.
-
-### Single native build
+then:
 
 ```sh
-cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+dotnet build SDRSharp.JAlert/SDRSharp.JAlert.csproj -c Release /p:Platform=x86
 ```
 
-The plugin only needs SDR++ headers plus zlib; `sdrpp_core` symbols are resolved
-at load time.
+(On a non-Windows host add `/p:EnableWindowsTargeting=true` — it compiles, but the
+plugin only runs inside SDR# on Windows.)
 
-## Releases
+## Installing into SDR#
 
-GitHub Actions ([.github/workflows/build.yml](.github/workflows/build.yml))
-builds the plugin for Linux **x86_64**, **x86 (i686)**, **ARM64 (aarch64)** and
-**ARM32 (armhf)** on every push, and attaches the four `.so` files to a GitHub
-Release whenever a `v*` tag is pushed (e.g. `git tag v1.0.0 && git push --tags`).
-zlib is statically linked, so each binary is self-contained.
+1. Copy `SDRSharp.JAlert.dll` into the SDR# folder (next to `SDRSharp.exe`).
+2. Add the plugin entry to SDR#'s `Plugins.json` — see
+   [Plugins.json.example](Plugins.json.example):
+   ```json
+   "J-ALERT Decoder": "SDRSharp.JAlert.JAlertPlugin,SDRSharp.JAlert"
+   ```
+3. Start SDR#, open the **J-ALERT Decoder** panel, **Play**, and tune onto the
+   J-ALERT carrier. Make sure the decimation/zoom leaves at least ~400 kHz of IQ
+   bandwidth around the carrier (the signal occupies ~346 kHz).
 
-Windows is currently out of scope: a Windows plugin must link MSVC-built SDR++
-core (the ELF unresolved-symbols approach doesn't apply).
+The panel shows lock state, a BPSK constellation, carrier/Costas offsets, the
+estimated bit error rate, HDLC frame counts, and the latest decoded alert
+(title / headline / time).
 
-## Installing into SDR++
+## Output
 
-Copy `j_alert_decoder.so` into the SDR++ plugin directory (Linux default
-`/usr/lib/sdrpp/plugins/`), or load it from the Module Manager and create an
-instance. Tune the VFO onto the J-ALERT carrier; the panel shows lock state, a
-BPSK constellation, carrier/Costas offsets, the estimated bit error rate, HDLC
-frame counts, and the latest decoded alert (title / headline / time). Recovered
-files can be:
+Recovered files can be:
 
 - streamed as JSONL to a **file** and/or a **TCP** port — every recovered file,
   with its payload inline (the alert XML for gzipped JMA telegrams, or base64 of
@@ -129,24 +138,19 @@ files can be:
   [docs/JSONL_FORMAT.md](docs/JSONL_FORMAT.md)
   ([日本語](docs/JSONL_FORMAT.ja.md)),
 - written to an **Output folder** (enable with the **File output** checkbox):
-  decoded JMA telegrams as `<timestamp>.xml`, other (non-XML) telegrams as the
-  raw bytes in `<timestamp>.<chunk_type>.bin`.
+  decoded JMA telegrams as `<timestamp>.xml`, other (non-XML) telegrams as the raw
+  bytes in `<timestamp>.<chunk_type>.bin`.
 
-Output paths default to the SDR++ config root: the **Output folder** to
-`~/.config/sdrpp/j_alert/` and the **JSONL file** to
-`~/.config/sdrpp/j_alert/decoded.jsonl`. Both can be changed in the panel.
-
-All output settings persist per instance in the SDR++ config.
+Output paths default to `%APPDATA%\SDRSharp.JAlert\j_alert\` (the JSONL file to
+`decoded.jsonl` there). All output settings persist in
+`%APPDATA%\SDRSharp.JAlert\settings.json`.
 
 ## Platform support
 
-| Target          | Supported |
-|-----------------|-----------|
-| Linux x86_64    | yes       |
-| Linux aarch64   | yes       |
-| Linux armhf     | yes       |
-| Windows         | no        |
-| macOS           | no        |
+| Target | Supported |
+|---|---|
+| Windows (SDR#, .NET 9, x86) | yes |
+| Linux / macOS | no (SDR# is Windows-only) |
 
 ## License
 

@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <PlatformTarget>x86</PlatformTarget>
+    <Platforms>x86</Platforms>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>SDRSharp.JAlert</AssemblyName>
+    <RootNamespace>SDRSharp.JAlert</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <!-- UI controls are built in code (no Designer), so the WinForms
+         designer-serialization analyzer does not apply. -->
+    <NoWarn>$(NoWarn);WFO1000</NoWarn>
+    <!-- The SDRSharp.* assemblies ship with SDR#; never copy them next to our DLL. -->
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <EnableDefaultItems>true</EnableDefaultItems>
+  </PropertyGroup>
+
+  <!--
+    SDR# SDK reference assemblies. These are NOT redistributable and are NOT
+    committed to the repo. CI downloads the official SDR# x86 build and copies
+    the DLLs into ./libs; for a local build, copy them there yourself from your
+    SDR# install folder (SDRSharp.Common.dll, SDRSharp.Radio.dll,
+    SDRSharp.PanView.dll).
+  -->
+  <ItemGroup>
+    <Reference Include="SDRSharp.Common">
+      <HintPath>..\libs\SDRSharp.Common.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="SDRSharp.Radio">
+      <HintPath>..\libs\SDRSharp.Radio.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="SDRSharp.PanView">
+      <HintPath>..\libs\SDRSharp.PanView.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>
