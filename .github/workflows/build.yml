@@ -22,30 +22,21 @@ jobs:
         with:
           dotnet-version: '9.0.x'
 
-      # The SDRSharp.* reference assemblies are not redistributable, so we fetch
-      # the official SDR# x86 build at CI time and reference its DLLs from ./libs.
-      - name: Fetch SDR# (x86) for reference DLLs
+      # Modern SDR# ships as a single-file self-contained exe, so the managed
+      # SDRSharp.* assemblies are not available as redistributable DLLs. Build the
+      # minimal reference ("stub") assemblies from ./sdk into ./libs and compile
+      # against those; at run time the references bind to the host's real
+      # assemblies. See sdk/README.md.
+      - name: Build SDR# reference assemblies
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path libs | Out-Null
-          # Official SDR# (SDRSharp) software package (Windows x86). This is a
-          # download-monitor link that redirects to the current sdrsharp-x86 zip.
-          $url = 'https://airspy.com/?ddownload=3130'
-          Write-Host "Downloading $url"
-          Invoke-WebRequest -Uri $url -OutFile sdrsharp.zip -UseBasicParsing -MaximumRedirection 10
-          $size = (Get-Item sdrsharp.zip).Length
-          Write-Host "Downloaded sdrsharp.zip ($size bytes)"
-          Expand-Archive -Path sdrsharp.zip -DestinationPath sdrsharp -Force
-          foreach ($dll in 'SDRSharp.Common.dll','SDRSharp.Radio.dll','SDRSharp.PanView.dll') {
-            $src = Get-ChildItem -Path sdrsharp -Recurse -Filter $dll | Select-Object -First 1
-            if (-not $src) {
-              Write-Host "Extracted contents:"
-              Get-ChildItem -Path sdrsharp -Recurse -Filter '*.dll' | ForEach-Object { Write-Host "  $($_.FullName)" }
-              throw "Missing $dll in the SDR# download"
-            }
-            Copy-Item $src.FullName -Destination (Join-Path 'libs' $dll) -Force
-            Write-Host "Copied $($src.FullName) -> libs/$dll"
+          foreach ($proj in 'SDRSharp.Radio','SDRSharp.PanView','SDRSharp.Common') {
+            dotnet build "sdk/$proj/$proj.csproj" -c Release
+            if ($LASTEXITCODE -ne 0) { throw "Failed to build stub $proj" }
+            Copy-Item "sdk/$proj/bin/Release/net9.0-windows/$proj.dll" -Destination "libs/$proj.dll" -Force
+            Write-Host "Built libs/$proj.dll"
           }
 
       - name: Build (Release, x86)
