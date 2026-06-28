@@ -64,7 +64,7 @@ converter bug makes it always wrong); the per-chunk `body_crc32` is verified.
 ```
 .
 ├── SDRSharp.JAlert/
-│   ├── SDRSharp.JAlert.csproj   # net8.0-windows, x86, WinForms, unsafe
+│   ├── SDRSharp.JAlert.csproj   # net8.0-windows, AnyCPU, WinForms, unsafe
 │   ├── JAlertPlugin.cs          # ISharpPlugin entry point
 │   ├── JAlertProcessor.cs       # IIQProcessor stream hook (NCO + Receiver + sinks)
 │   ├── JAlertPanel.cs           # WinForms side panel
@@ -82,7 +82,7 @@ converter bug makes it always wrong); the per-chunk `body_crc32` is verified.
 
 ## Building
 
-The plugin targets **.NET 8 (`net8.0-windows`), x86**. The current SDR# package
+The plugin targets **.NET 8 (`net8.0-windows`), AnyCPU**. The current SDR# package
 ships both `SDRSharp.dotnet8.exe` and `SDRSharp.dotnet9.exe` and the default is
 the .NET 8 host (per the changelog, "reverted to dotnet 8.0 until the plugins
 follow"); a `net8.0` plugin loads in **both** hosts, whereas a `net9.0` plugin
@@ -109,7 +109,7 @@ dotnet build sdk/SDRSharp.PanView/SDRSharp.PanView.csproj -c Release
 dotnet build sdk/SDRSharp.Common/SDRSharp.Common.csproj  -c Release
 mkdir -p libs && cp sdk/*/bin/Release/net8.0-windows/SDRSharp.*.dll libs/
 
-dotnet build SDRSharp.JAlert/SDRSharp.JAlert.csproj -c Release /p:Platform=x86
+dotnet build SDRSharp.JAlert/SDRSharp.JAlert.csproj -c Release
 ```
 
 (On a non-Windows host add `/p:EnableWindowsTargeting=true` to each — it compiles,
@@ -158,7 +158,7 @@ Output paths default to `%APPDATA%\SDRSharp.JAlert\j_alert\` (the JSONL file to
 
 | Target | Supported |
 |---|---|
-| Windows (SDR#, .NET 8, x86) | yes |
+| Windows (SDR#, .NET 8) | yes |
 | Linux / macOS | no (SDR# is Windows-only) |
 
 ## License

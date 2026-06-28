@@ -43,8 +43,29 @@ jobs:
             Write-Host "Built libs/$proj.dll"
           }
 
-      - name: Build (Release, x86)
-        run: dotnet build SDRSharp.JAlert/SDRSharp.JAlert.csproj -c Release /p:Platform=x86
+      - name: Build (Release)
+        run: dotnet build SDRSharp.JAlert/SDRSharp.JAlert.csproj -c Release
+
+      # Integration test: prove the plugin loads and is recognized by reproducing
+      # SDR#'s discovery logic against the REAL SDR# assemblies (extracted from the
+      # single-file exe). Catches API/runtime/architecture mismatches that would
+      # otherwise only show up as a silently-skipped plugin in SDR#.
+      - name: Verify plugin loads (real SDR# assemblies)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Invoke-WebRequest -Uri 'https://airspy.com/?ddownload=3130' -OutFile sdrsharp.zip -UseBasicParsing -MaximumRedirection 10
+          # The managed assemblies live inside the single-file exe; extract the zip,
+          # then pull the assemblies out of the bundle.
+          Expand-Archive -Path sdrsharp.zip -DestinationPath sdrdist -Force
+          New-Item -ItemType Directory -Force -Path realdlls | Out-Null
+          python tools/extract_bundle.py sdrdist/SDRSharp.dotnet8.exe realdlls
+          if (-not (Test-Path realdlls/SDRSharp.Common.dll)) { throw "Failed to extract SDRSharp.Common.dll from SDR#" }
+          dotnet build tools/PluginLoadCheck/PluginLoadCheck.csproj -c Release
+          $checker = Get-ChildItem -Path tools/PluginLoadCheck/bin -Recurse -Filter PluginLoadCheck.dll | Select-Object -First 1
+          $plugin = Get-ChildItem -Path SDRSharp.JAlert/bin -Recurse -Filter SDRSharp.JAlert.dll | Select-Object -First 1
+          dotnet $checker.FullName $plugin.FullName (Resolve-Path realdlls)
+          if ($LASTEXITCODE -ne 0) { throw "Plugin load verification failed" }
 
       - name: Stage package
         shell: pwsh

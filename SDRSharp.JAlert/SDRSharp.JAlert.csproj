@@ -3,8 +3,8 @@
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
-    <PlatformTarget>x86</PlatformTarget>
-    <Platforms>x86</Platforms>
+    <!-- AnyCPU (no native deps) loads in both the 32-bit and 64-bit SDR# hosts. -->
+    <PlatformTarget>AnyCPU</PlatformTarget>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>SDRSharp.JAlert</AssemblyName>
     <RootNamespace>SDRSharp.JAlert</RootNamespace>
@@ -20,11 +20,11 @@
   </PropertyGroup>
 
   <!--
-    SDR# SDK reference assemblies. These are NOT redistributable and are NOT
-    committed to the repo. CI downloads the official SDR# x86 build and copies
-    the DLLs into ./libs; for a local build, copy them there yourself from your
-    SDR# install folder (SDRSharp.Common.dll, SDRSharp.Radio.dll,
-    SDRSharp.PanView.dll).
+    SDR# SDK reference assemblies. Modern SDR# is a single-file self-contained
+    exe, so these managed assemblies are not shipped as separate DLLs. They are
+    built from ./sdk into ./libs (by CI, or locally — see sdk/README.md) and used
+    for compilation only; at run time the references bind to SDR#'s real,
+    embedded assemblies.
   -->
   <ItemGroup>
     <Reference Include="SDRSharp.Common">

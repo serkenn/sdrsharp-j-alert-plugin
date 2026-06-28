@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- net8.0-windows so the host can resolve WinForms types referenced by the
+         real SDRSharp.Common (UserControl in ISharpPlugin.Gui). -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>PluginLoadCheck</AssemblyName>
+  </PropertyGroup>
+</Project>

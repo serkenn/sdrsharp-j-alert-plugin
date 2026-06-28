@@ -60,7 +60,7 @@ gzip でない／JMA でないチャンクも復元・報告されますが、XM
 ```
 .
 ├── SDRSharp.JAlert/
-│   ├── SDRSharp.JAlert.csproj   # net8.0-windows, x86, WinForms, unsafe
+│   ├── SDRSharp.JAlert.csproj   # net8.0-windows, AnyCPU, WinForms, unsafe
 │   ├── JAlertPlugin.cs          # ISharpPlugin エントリポイント
 │   ├── JAlertProcessor.cs       # IIQProcessor ストリームフック（NCO + Receiver + シンク）
 │   ├── JAlertPanel.cs           # WinForms サイドパネル
@@ -78,7 +78,7 @@ gzip でない／JMA でないチャンクも復元・報告されますが、XM
 
 ## ビルド
 
-**.NET 8（`net8.0-windows`）、x86** を対象とします。現行の SDR# パッケージは
+**.NET 8（`net8.0-windows`）、AnyCPU** を対象とします。現行の SDR# パッケージは
 `SDRSharp.dotnet8.exe` と `SDRSharp.dotnet9.exe` の両方を同梱し、既定は .NET 8
 ホストです（changelog に "reverted to dotnet 8.0 until the plugins follow"）。
 `net8.0` プラグインは**両方**のホストで読み込めますが、`net9.0` プラグインは
@@ -104,7 +104,7 @@ dotnet build sdk/SDRSharp.PanView/SDRSharp.PanView.csproj -c Release
 dotnet build sdk/SDRSharp.Common/SDRSharp.Common.csproj  -c Release
 mkdir -p libs && cp sdk/*/bin/Release/net8.0-windows/SDRSharp.*.dll libs/
 
-dotnet build SDRSharp.JAlert/SDRSharp.JAlert.csproj -c Release /p:Platform=x86
+dotnet build SDRSharp.JAlert/SDRSharp.JAlert.csproj -c Release
 ```
 
 （Windows 以外のホストでは各コマンドに `/p:EnableWindowsTargeting=true` を追加。
@@ -153,7 +153,7 @@ dotnet build SDRSharp.JAlert/SDRSharp.JAlert.csproj -c Release /p:Platform=x86
 
 | 対象 | 対応 |
 |---|---|
-| Windows（SDR#、.NET 8、x86） | 対応 |
+| Windows（SDR#、.NET 8） | 対応 |
 | Linux / macOS | 非対応（SDR# は Windows 専用） |
 
 ## ライセンス
