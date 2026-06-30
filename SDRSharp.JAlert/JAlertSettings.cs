@@ -24,6 +24,12 @@ namespace SDRSharp.JAlert
         // host tuning.
         public bool AfcEnabled { get; set; }
 
+        // Acquire/track gear-shift in the demod: smooth the coarse carrier and
+        // narrow the Costas loop once locked to lower steady-state BER. On by
+        // default (a strict tracking improvement); older settings files without
+        // the key keep the initialized value.
+        public bool AdaptiveTracking { get; set; } = true;
+
         private static string ConfigDir =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                          "SDRSharp.JAlert");

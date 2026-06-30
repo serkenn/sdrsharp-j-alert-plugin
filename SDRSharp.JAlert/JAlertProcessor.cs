@@ -57,12 +57,14 @@ namespace SDRSharp.JAlert
 
         private bool _afcEnabled;
         private DateTime _afcLastTick = DateTime.MinValue;
+        private bool _adaptiveTracking;
 
         public JAlertProcessor(ISharpControl control, JAlertSettings settings)
         {
             _control = control;
             _settings = settings;
             _afcEnabled = settings.AfcEnabled;
+            _adaptiveTracking = settings.AdaptiveTracking;
 
             if (settings.JsonlFileEnabled && !string.IsNullOrEmpty(settings.JsonlFilePath))
                 _fileSink = new FileJsonlSink(settings.JsonlFilePath);
@@ -97,6 +99,7 @@ namespace SDRSharp.JAlert
             if (_receiver == null || _receiverRate != fs)
             {
                 _receiver = new Receiver(fs, OnAlert);
+                _receiver.Demod.AdaptiveTracking = _adaptiveTracking;
                 _receiverRate = fs;
                 _curRe = 1.0; _curIm = 0.0;
                 _ncoOffsetHz = double.NaN;
@@ -141,6 +144,18 @@ namespace SDRSharp.JAlert
         }
 
         public Receiver CurrentReceiver => _receiver;
+
+        // Acquire/track gear-shift in the demod (lower steady-state BER).
+        public bool AdaptiveTracking
+        {
+            get => _adaptiveTracking;
+            set
+            {
+                _adaptiveTracking = value;
+                BpskDemod demod = _receiver?.Demod;
+                if (demod != null) demod.AdaptiveTracking = value;
+            }
+        }
 
         // Auto-follow LNB drift: when on, ServiceAfc re-centers the VFO.
         public bool AfcEnabled

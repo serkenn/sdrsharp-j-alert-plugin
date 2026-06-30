@@ -32,6 +32,7 @@ namespace SDRSharp.JAlert
         private readonly Sparkline _sparkCostas = new Sparkline();
         private readonly Sparkline _sparkQuality = new Sparkline();
         private readonly CheckBox _afcCheck = new CheckBox();
+        private readonly CheckBox _adaptiveCheck = new CheckBox();
         private readonly Label _counters = new Label();
         private readonly Label _latest = new Label();
         private readonly ListBox _recentList = new ListBox();
@@ -114,6 +115,17 @@ namespace SDRSharp.JAlert
                 _settings.Save();
             };
 
+            _adaptiveCheck.Text = "Adaptive tracking (lower BER when locked)";
+            _adaptiveCheck.AutoSize = true;
+            _adaptiveCheck.Checked = _settings.AdaptiveTracking;
+            _processor.AdaptiveTracking = _settings.AdaptiveTracking;
+            _adaptiveCheck.CheckedChanged += (s, e) =>
+            {
+                _settings.AdaptiveTracking = _adaptiveCheck.Checked;
+                _processor.AdaptiveTracking = _adaptiveCheck.Checked;
+                _settings.Save();
+            };
+
             _counters.AutoSize = true;
             _counters.Text = "";
 
@@ -187,6 +199,7 @@ namespace SDRSharp.JAlert
             root.Controls.Add(_sparkCoarse);
             root.Controls.Add(_sparkCostas);
             root.Controls.Add(_sparkQuality);
+            root.Controls.Add(_adaptiveCheck);
             root.Controls.Add(_afcCheck);
             root.Controls.Add(Separator());
             root.Controls.Add(_counters);

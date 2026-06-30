@@ -29,6 +29,13 @@ namespace SDRSharp.JAlert.Dsp
         private const double CostasFreqGain = 2.5e-5;
         private const double CostasPhaseGain = 1.0e-2;
 
+        // Adaptive tracking (acquire/track gear-shift). Once locked, smooth the
+        // block coarse-carrier estimate (instead of hard-replacing it every
+        // block) and narrow the Costas loop, cutting steady-state carrier/phase
+        // jitter — and thus BER — without slowing acquisition.
+        private const double CoarseTrackGain = 0.25;   // locked-state coarse EMA gain
+        private const double CostasTrackScale = 0.5;    // locked-state Costas gain factor
+
         // Resampler anti-alias / channel cutoff (one-sided). Passes the (1+β)·Rs/2
         // ≈ 173 kHz occupied band with margin, blocks the resampler images.
         private const double ResampCutoffHz = 250_000.0;
@@ -71,6 +78,7 @@ namespace SDRSharp.JAlert.Dsp
         private float _lockIm;
         private bool _locked;
         private long _symbols;
+        private bool _adaptive = true;
 
         // Constellation ring (DSP thread writes, UI thread pulls).
         private readonly object _constMtx = new object();
@@ -160,7 +168,13 @@ namespace SDRSharp.JAlert.Dsp
                 _cBlk[_cBlkLen++] = new Complex(z.Re, z.Im);
                 if (_cBlkLen >= CoarseBlock)
                 {
-                    _cOmega = EstimateCoarseOmega(_cBlk, _cBlkLen);
+                    double est = EstimateCoarseOmega(_cBlk, _cBlkLen);
+                    // Gear-shift: hard-acquire while searching, smooth once
+                    // locked so per-block FFT jitter doesn't step the carrier
+                    // faster than the (slow) Costas loop can absorb it.
+                    _cOmega = (_adaptive && _locked)
+                        ? _cOmega + CoarseTrackGain * (est - _cOmega)
+                        : est;
                     _cBlkLen = 0;
                 }
             }
@@ -184,8 +198,10 @@ namespace SDRSharp.JAlert.Dsp
                 Complex32 y = Rotate(sym, _costasPhase);
                 double dec = (y.Re >= 0.0f) ? 1.0 : -1.0;
                 double e = (double)y.Im * dec;
-                _costasFreq += CostasFreqGain * e;
-                _costasPhase = Wrap(_costasPhase + _costasFreq + CostasPhaseGain * e);
+                // Gear-shift: narrow the loop once locked to cut phase jitter.
+                double g = (_adaptive && _locked) ? CostasTrackScale : 1.0;
+                _costasFreq += CostasFreqGain * g * e;
+                _costasPhase = Wrap(_costasPhase + _costasFreq + CostasPhaseGain * g * e);
 
                 _lastSym = y;
                 ++_symbols;
@@ -204,6 +220,13 @@ namespace SDRSharp.JAlert.Dsp
 
                 softOut.Add(y.Re);
             }
+        }
+
+        // Acquire/track gear-shift (smooth coarse + narrow Costas once locked).
+        public bool AdaptiveTracking
+        {
+            get => _adaptive;
+            set => _adaptive = value;
         }
 
         // ── Diagnostics (UI) ──
