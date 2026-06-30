@@ -19,6 +19,11 @@ namespace SDRSharp.JAlert
         public bool JsonlFileEnabled { get; set; }
         public bool JsonlTcpEnabled { get; set; }
 
+        // Auto-follow the (drifting) LNB local oscillator by re-centering the
+        // SDR# VFO on the recovered carrier. Off by default since it moves the
+        // host tuning.
+        public bool AfcEnabled { get; set; }
+
         private static string ConfigDir =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                          "SDRSharp.JAlert");

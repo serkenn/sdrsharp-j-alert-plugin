@@ -22,6 +22,18 @@ namespace SDRSharp.JAlert
     {
         private const int RecentAlerts = 32;
 
+        // AFC (auto-follow LNB drift). Evaluated at most every AfcIntervalSec,
+        // only while the demod is locked: nudge the SDR# VFO toward the recovered
+        // carrier so the (drifting) signal stays inside the host channel filter.
+        // LNB thermal drift is slow, so a relaxed cadence and a deadband keep the
+        // tuning from chattering; the per-step clamp guards against a stray
+        // estimate yanking the VFO. The correction is the bulk (coarse) offset
+        // only — the small Costas residual doesn't affect filter centering.
+        private const double AfcIntervalSec = 2.0;
+        private const double AfcDeadbandHz = 20_000.0;
+        private const double AfcGain = 0.9;
+        private const double AfcMaxStepHz = 250_000.0;
+
         private readonly ISharpControl _control;
         private readonly JAlertSettings _settings;
         private readonly object _uiMtx = new object();
@@ -43,10 +55,14 @@ namespace SDRSharp.JAlert
         private FileJsonlSink _fileSink;
         private TcpJsonlSink _tcpSink;
 
+        private bool _afcEnabled;
+        private DateTime _afcLastTick = DateTime.MinValue;
+
         public JAlertProcessor(ISharpControl control, JAlertSettings settings)
         {
             _control = control;
             _settings = settings;
+            _afcEnabled = settings.AfcEnabled;
 
             if (settings.JsonlFileEnabled && !string.IsNullOrEmpty(settings.JsonlFilePath))
                 _fileSink = new FileJsonlSink(settings.JsonlFilePath);
@@ -125,6 +141,45 @@ namespace SDRSharp.JAlert
         }
 
         public Receiver CurrentReceiver => _receiver;
+
+        // Auto-follow LNB drift: when on, ServiceAfc re-centers the VFO.
+        public bool AfcEnabled
+        {
+            get => _afcEnabled;
+            set
+            {
+                _afcEnabled = value;
+                _afcLastTick = DateTime.MinValue;   // act on the next service tick
+            }
+        }
+
+        // Automatic frequency control. Call periodically from the UI thread (it
+        // writes ISharpControl.Frequency, the host tuning property). When the
+        // demod is locked, slowly steer the SDR# VFO onto the recovered carrier
+        // so a drifting LNB local oscillator keeps the signal inside the host
+        // channel filter. No-op while unlocked, so it never chases noise between
+        // bursts; the slow LNB drift is recovered on the next received burst.
+        public void ServiceAfc()
+        {
+            if (!_afcEnabled) return;
+
+            BpskDemod demod = _receiver?.Demod;
+            if (demod == null || !demod.Locked) return;
+
+            DateTime now = DateTime.UtcNow;
+            if ((now - _afcLastTick).TotalSeconds < AfcIntervalSec) return;
+            _afcLastTick = now;
+
+            double offset = demod.CoarseOffsetHz;
+            if (Math.Abs(offset) < AfcDeadbandHz) return;
+
+            double step = offset * AfcGain;
+            if (step > AfcMaxStepHz) step = AfcMaxStepHz;
+            else if (step < -AfcMaxStepHz) step = -AfcMaxStepHz;
+
+            long newFreq = _control.Frequency + (long)Math.Round(step);
+            if (newFreq > 0) _control.Frequency = newFreq;
+        }
 
         // Called from the DSP thread when a NowcastPacket is decoded.
         private void OnAlert(DecodedAlert a)

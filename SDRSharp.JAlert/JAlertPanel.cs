@@ -31,6 +31,7 @@ namespace SDRSharp.JAlert
         private readonly Sparkline _sparkCoarse = new Sparkline();
         private readonly Sparkline _sparkCostas = new Sparkline();
         private readonly Sparkline _sparkQuality = new Sparkline();
+        private readonly CheckBox _afcCheck = new CheckBox();
         private readonly Label _counters = new Label();
         private readonly Label _latest = new Label();
         private readonly ListBox _recentList = new ListBox();
@@ -101,6 +102,17 @@ namespace SDRSharp.JAlert
             ConfigureSparkline(_sparkCoarse);
             ConfigureSparkline(_sparkCostas);
             ConfigureSparkline(_sparkQuality);
+
+            _afcCheck.Text = "Auto-follow LNB drift (AFC)";
+            _afcCheck.AutoSize = true;
+            _afcCheck.Checked = _settings.AfcEnabled;
+            _processor.AfcEnabled = _settings.AfcEnabled;
+            _afcCheck.CheckedChanged += (s, e) =>
+            {
+                _settings.AfcEnabled = _afcCheck.Checked;
+                _processor.AfcEnabled = _afcCheck.Checked;
+                _settings.Save();
+            };
 
             _counters.AutoSize = true;
             _counters.Text = "";
@@ -175,6 +187,7 @@ namespace SDRSharp.JAlert
             root.Controls.Add(_sparkCoarse);
             root.Controls.Add(_sparkCostas);
             root.Controls.Add(_sparkQuality);
+            root.Controls.Add(_afcCheck);
             root.Controls.Add(Separator());
             root.Controls.Add(_counters);
             root.Controls.Add(Separator());
@@ -315,6 +328,10 @@ namespace SDRSharp.JAlert
         private void OnTick(object sender, EventArgs e)
         {
             _constellation.Invalidate();
+
+            // Auto-follow LNB drift: re-center the VFO from the UI thread (safe
+            // to write the host tuning here). Self-throttled and gated on lock.
+            _processor.ServiceAfc();
 
             Receiver r = _processor.CurrentReceiver;
             bool enabled = _processor.Enabled;
