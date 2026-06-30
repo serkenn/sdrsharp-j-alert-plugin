@@ -29,6 +29,9 @@ namespace SDRSharp.JAlert.Ui
         private readonly float[] _accum = new float[BinCount * BinCount];
 
         private double _evmPercent;
+        private double _evmIPercent;   // decision-axis (Re) error — drives BER
+        private double _evmQPercent;   // quadrature (Im) error — phase/benign
+        private double _snrDb;         // Es/N0 estimate from the decision axis
         private int _clippedThisFrame;
         private int _samplesThisFrame;
         private float _lastAccumMax;
@@ -62,7 +65,7 @@ namespace SDRSharp.JAlert.Ui
             _clippedThisFrame = 0;
 
             float idealAxis = (float)_observedAmp;   // BPSK: |Re|≈amp
-            double evmSq = 0.0, ampSq = 0.0;
+            double evmReSq = 0.0, evmImSq = 0.0, ampSq = 0.0;
             int evmN = 0;
 
             for (int i = 0; i < n; ++i)
@@ -72,7 +75,8 @@ namespace SDRSharp.JAlert.Ui
                 float idealRe = re >= 0.0f ? idealAxis : -idealAxis;
                 float dRe = re - idealRe;
                 float dIm = im;                          // ideal Im = 0
-                evmSq += dRe * dRe + dIm * dIm;
+                evmReSq += dRe * dRe;                     // decision-axis error
+                evmImSq += dIm * dIm;                     // quadrature error
                 ampSq += re * re + im * im;
                 ++evmN;
 
@@ -93,11 +97,19 @@ namespace SDRSharp.JAlert.Ui
                 if (frameAmp > 0.05)
                     _observedAmp = (1.0 - ObservedAmpAlpha) * _observedAmp + ObservedAmpAlpha * frameAmp;
                 double denom = Math.Max(0.1, _observedAmp);
-                _evmPercent = Math.Sqrt(evmSq / evmN) / denom * 100.0;
+                double sigmaI = Math.Sqrt(evmReSq / evmN);
+                double sigmaQ = Math.Sqrt(evmImSq / evmN);
+                _evmPercent = Math.Sqrt((evmReSq + evmImSq) / evmN) / denom * 100.0;
+                _evmIPercent = sigmaI / denom * 100.0;
+                _evmQPercent = sigmaQ / denom * 100.0;
+                // Decision-axis Es/N0: signal amp vs the noise std on Re. This is
+                // what predicts BPSK BER (the quadrature spread does not).
+                _snrDb = sigmaI > 1e-6 ? 20.0 * Math.Log10(denom / sigmaI) : 99.0;
             }
             else
             {
-                _evmPercent = 0.0;
+                _evmPercent = _evmIPercent = _evmQPercent = 0.0;
+                _snrDb = 0.0;
             }
         }
 
@@ -172,6 +184,14 @@ namespace SDRSharp.JAlert.Ui
                     SizeF sz = g.MeasureString(buf, font);
                     using (SolidBrush br = new SolidBrush(Color.FromArgb(190, Green)))
                         g.DrawString(buf, font, br, ox + size - sz.Width - 4.0f, oy + 2.0f);
+
+                    // I/Q split + decision-axis SNR: tells whether the EVM is
+                    // decision-relevant (I) or benign phase/quadrature (Q).
+                    string buf2 = "I " + _evmIPercent.ToString("0") + " Q " + _evmQPercent.ToString("0") +
+                                  "  " + _snrDb.ToString("0.0") + "dB";
+                    SizeF sz2 = g.MeasureString(buf2, font);
+                    using (SolidBrush br = new SolidBrush(Color.FromArgb(150, Green)))
+                        g.DrawString(buf2, font, br, ox + size - sz2.Width - 4.0f, oy + 2.0f + sz.Height);
 
                     if (_samplesThisFrame > 0 &&
                         (double)_clippedThisFrame / _samplesThisFrame >= ClipWarnRatio)
