@@ -58,6 +58,7 @@ namespace SDRSharp.JAlert
         private bool _afcEnabled;
         private DateTime _afcLastTick = DateTime.MinValue;
         private bool _adaptiveTracking;
+        private double _carrierLoopScale;
 
         public JAlertProcessor(ISharpControl control, JAlertSettings settings)
         {
@@ -65,6 +66,7 @@ namespace SDRSharp.JAlert
             _settings = settings;
             _afcEnabled = settings.AfcEnabled;
             _adaptiveTracking = settings.AdaptiveTracking;
+            _carrierLoopScale = settings.CarrierLoopScale;
 
             if (settings.JsonlFileEnabled && !string.IsNullOrEmpty(settings.JsonlFilePath))
                 _fileSink = new FileJsonlSink(settings.JsonlFilePath);
@@ -100,6 +102,7 @@ namespace SDRSharp.JAlert
             {
                 _receiver = new Receiver(fs, OnAlert);
                 _receiver.Demod.AdaptiveTracking = _adaptiveTracking;
+                _receiver.Demod.CarrierLoopScale = _carrierLoopScale;
                 _receiverRate = fs;
                 _curRe = 1.0; _curIm = 0.0;
                 _ncoOffsetHz = double.NaN;
@@ -154,6 +157,18 @@ namespace SDRSharp.JAlert
                 _adaptiveTracking = value;
                 BpskDemod demod = _receiver?.Demod;
                 if (demod != null) demod.AdaptiveTracking = value;
+            }
+        }
+
+        // Costas carrier-loop bandwidth multiplier (wider tracks more phase noise).
+        public double CarrierLoopScale
+        {
+            get => _carrierLoopScale;
+            set
+            {
+                _carrierLoopScale = value;
+                BpskDemod demod = _receiver?.Demod;
+                if (demod != null) demod.CarrierLoopScale = value;
             }
         }
 

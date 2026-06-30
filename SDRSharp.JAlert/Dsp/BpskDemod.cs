@@ -29,12 +29,10 @@ namespace SDRSharp.JAlert.Dsp
         private const double CostasFreqGain = 2.5e-5;
         private const double CostasPhaseGain = 1.0e-2;
 
-        // Adaptive tracking (acquire/track gear-shift). Once locked, smooth the
-        // block coarse-carrier estimate (instead of hard-replacing it every
-        // block) and narrow the Costas loop, cutting steady-state carrier/phase
-        // jitter — and thus BER — without slowing acquisition.
+        // Adaptive tracking: once locked, smooth the block coarse-carrier
+        // estimate (instead of hard-replacing it every block) so per-block FFT
+        // jitter doesn't step the carrier faster than the Costas can absorb.
         private const double CoarseTrackGain = 0.25;   // locked-state coarse EMA gain
-        private const double CostasTrackScale = 0.5;    // locked-state Costas gain factor
 
         // Resampler anti-alias / channel cutoff (one-sided). Passes the (1+β)·Rs/2
         // ≈ 173 kHz occupied band with margin, blocks the resampler images.
@@ -79,6 +77,7 @@ namespace SDRSharp.JAlert.Dsp
         private bool _locked;
         private long _symbols;
         private bool _adaptive = true;
+        private double _carrierLoopScale = 1.0;   // Costas loop-bandwidth multiplier
 
         // Constellation ring (DSP thread writes, UI thread pulls).
         private readonly object _constMtx = new object();
@@ -198,8 +197,12 @@ namespace SDRSharp.JAlert.Dsp
                 Complex32 y = Rotate(sym, _costasPhase);
                 double dec = (y.Re >= 0.0f) ? 1.0 : -1.0;
                 double e = (double)y.Im * dec;
-                // Gear-shift: narrow the loop once locked to cut phase jitter.
-                double g = (_adaptive && _locked) ? CostasTrackScale : 1.0;
+                // Carrier loop bandwidth is user-selectable: a wider loop tracks
+                // LNB phase noise / fast frequency wander (shrinks the quadrature
+                // spread), a narrower one rejects more decision noise. The 180°
+                // slips a wide loop may take are absorbed by the differential
+                // decode, so widening is safe for this DBPSK link.
+                double g = _carrierLoopScale;
                 _costasFreq += CostasFreqGain * g * e;
                 _costasPhase = Wrap(_costasPhase + _costasFreq + CostasPhaseGain * g * e);
 
@@ -222,11 +225,18 @@ namespace SDRSharp.JAlert.Dsp
             }
         }
 
-        // Acquire/track gear-shift (smooth coarse + narrow Costas once locked).
+        // Smooth the coarse carrier once locked (acquire/track gear-shift).
         public bool AdaptiveTracking
         {
             get => _adaptive;
             set => _adaptive = value;
+        }
+
+        // Costas loop-bandwidth multiplier (>1 tracks more phase noise).
+        public double CarrierLoopScale
+        {
+            get => _carrierLoopScale;
+            set => _carrierLoopScale = value > 0.0 ? value : 1.0;
         }
 
         // ── Diagnostics (UI) ──

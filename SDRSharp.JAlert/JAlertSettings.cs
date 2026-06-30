@@ -30,6 +30,11 @@ namespace SDRSharp.JAlert
         // the key keep the initialized value.
         public bool AdaptiveTracking { get; set; } = true;
 
+        // Costas carrier-loop bandwidth multiplier (0.5 narrow … 4 wider). Wider
+        // tracks LNB phase noise / fast frequency wander at the cost of more
+        // decision noise. 1.0 = original loop. Older files keep the initializer.
+        public double CarrierLoopScale { get; set; } = 1.0;
+
         private static string ConfigDir =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                          "SDRSharp.JAlert");
@@ -82,6 +87,7 @@ namespace SDRSharp.JAlert
             if (string.IsNullOrEmpty(XmlOutputDir)) XmlOutputDir = DefaultOutputDir;
             if (string.IsNullOrEmpty(JsonlFilePath)) JsonlFilePath = Path.Combine(DefaultOutputDir, "decoded.jsonl");
             if (JsonlTcpPort <= 0 || JsonlTcpPort > 65535) JsonlTcpPort = 7355;
+            if (!(CarrierLoopScale >= 0.25) || CarrierLoopScale > 8.0) CarrierLoopScale = 1.0;
         }
     }
 }

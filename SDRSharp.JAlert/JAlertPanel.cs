@@ -33,7 +33,17 @@ namespace SDRSharp.JAlert
         private readonly Sparkline _sparkQuality = new Sparkline();
         private readonly CheckBox _afcCheck = new CheckBox();
         private readonly CheckBox _adaptiveCheck = new CheckBox();
+        private readonly ComboBox _carrierLoopCombo = new ComboBox();
         private readonly Label _counters = new Label();
+
+        // Carrier-loop bandwidth presets (label, Costas-gain multiplier).
+        private static readonly (string Label, double Scale)[] CarrierLoopPresets =
+        {
+            ("Narrow (0.5x)", 0.5),
+            ("Normal (1x)", 1.0),
+            ("Wide (2x)", 2.0),
+            ("Wider (4x)", 4.0),
+        };
         private readonly Label _latest = new Label();
         private readonly ListBox _recentList = new ListBox();
 
@@ -126,6 +136,18 @@ namespace SDRSharp.JAlert
                 _settings.Save();
             };
 
+            _carrierLoopCombo.DropDownStyle = ComboBoxStyle.DropDownList;
+            foreach ((string label, double _) in CarrierLoopPresets) _carrierLoopCombo.Items.Add(label);
+            _carrierLoopCombo.SelectedIndex = NearestCarrierLoopIndex(_settings.CarrierLoopScale);
+            _processor.CarrierLoopScale = CarrierLoopPresets[_carrierLoopCombo.SelectedIndex].Scale;
+            _carrierLoopCombo.SelectedIndexChanged += (s, e) =>
+            {
+                double scale = CarrierLoopPresets[_carrierLoopCombo.SelectedIndex].Scale;
+                _settings.CarrierLoopScale = scale;
+                _processor.CarrierLoopScale = scale;
+                _settings.Save();
+            };
+
             _counters.AutoSize = true;
             _counters.Text = "";
 
@@ -200,6 +222,8 @@ namespace SDRSharp.JAlert
             root.Controls.Add(_sparkCostas);
             root.Controls.Add(_sparkQuality);
             root.Controls.Add(_adaptiveCheck);
+            root.Controls.Add(new Label { Text = "Carrier loop bandwidth", AutoSize = true });
+            root.Controls.Add(_carrierLoopCombo);
             root.Controls.Add(_afcCheck);
             root.Controls.Add(Separator());
             root.Controls.Add(_counters);
@@ -229,6 +253,19 @@ namespace SDRSharp.JAlert
             s.Height = 18;
             s.BackColor = SystemColors.Control;
             s.SetCaptionWidth(90.0f);
+        }
+
+        // Index of the preset whose scale is closest to a stored value.
+        private static int NearestCarrierLoopIndex(double scale)
+        {
+            int best = 1;   // default "Normal"
+            double bestDiff = double.MaxValue;
+            for (int i = 0; i < CarrierLoopPresets.Length; ++i)
+            {
+                double d = Math.Abs(CarrierLoopPresets[i].Scale - scale);
+                if (d < bestDiff) { bestDiff = d; best = i; }
+            }
+            return best;
         }
 
         private static Label SectionHeader(string text)
@@ -295,6 +332,10 @@ namespace SDRSharp.JAlert
 
                 _tcpPort.BackColor = field;
                 _tcpPort.ForeColor = fore;
+
+                _carrierLoopCombo.BackColor = field;
+                _carrierLoopCombo.ForeColor = fore;
+                _carrierLoopCombo.FlatStyle = dark ? FlatStyle.Flat : FlatStyle.Standard;
 
                 _counters.ForeColor = fore;
                 _latest.ForeColor = fore;
